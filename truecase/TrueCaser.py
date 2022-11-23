@@ -9,13 +9,16 @@ from nltk.tokenize.treebank import TreebankWordDetokenizer
 
 
 class TrueCaser(object):
-    def __init__(self, dist_file_path=None):
+    def __init__(self, dist_file_path=None, abbreviations=None):
         """ Initialize module with default data/english.dist file """
         if dist_file_path is None:
             dist_file_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
-                "data/english.dist")
-
+                os.path.dirname(os.path.abspath(__file__)), "data/english.dist"
+            )
+        if abbreviations is None:
+            self.abbreviations = set()
+        elif isinstance(abbreviations, list):
+            self.abbreviations = set(abbreviations)
         with open(dist_file_path, "rb") as distributions_file:
             pickle_dict = pickle.load(distributions_file)
             self.uni_dist = pickle_dict["uni_dist"]
@@ -31,8 +34,7 @@ class TrueCaser(object):
         # Get Unigram Score
         numerator = self.uni_dist[possible_token] + pseudo_count
         denominator = 0
-        for alternativeToken in self.word_casing_lookup[
-                possible_token.lower()]:
+        for alternativeToken in self.word_casing_lookup[possible_token.lower()]:
             denominator += self.uni_dist[alternativeToken] + pseudo_count
 
         unigram_score = numerator / denominator
@@ -41,14 +43,14 @@ class TrueCaser(object):
         bigram_backward_score = 1
         if prev_token is not None:
             numerator = (
-                self.backward_bi_dist[prev_token + "_" + possible_token] +
-                pseudo_count)
+                self.backward_bi_dist[prev_token + "_" + possible_token] + pseudo_count
+            )
             denominator = 0
-            for alternativeToken in self.word_casing_lookup[
-                    possible_token.lower()]:
-                denominator += (self.backward_bi_dist[prev_token + "_" +
-                                                      alternativeToken] +
-                                pseudo_count)
+            for alternativeToken in self.word_casing_lookup[possible_token.lower()]:
+                denominator += (
+                    self.backward_bi_dist[prev_token + "_" + alternativeToken]
+                    + pseudo_count
+                )
 
             bigram_backward_score = numerator / denominator
 
@@ -57,14 +59,14 @@ class TrueCaser(object):
         if next_token is not None:
             next_token = next_token.lower()  # Ensure it is lower case
             numerator = (
-                self.forward_bi_dist[possible_token + "_" + next_token] +
-                pseudo_count)
+                self.forward_bi_dist[possible_token + "_" + next_token] + pseudo_count
+            )
             denominator = 0
-            for alternativeToken in self.word_casing_lookup[
-                    possible_token.lower()]:
+            for alternativeToken in self.word_casing_lookup[possible_token.lower()]:
                 denominator += (
-                    self.forward_bi_dist[alternativeToken + "_" + next_token] +
-                    pseudo_count)
+                    self.forward_bi_dist[alternativeToken + "_" + next_token]
+                    + pseudo_count
+                )
 
             bigram_forward_score = numerator / denominator
 
@@ -72,19 +74,27 @@ class TrueCaser(object):
         trigram_score = 1
         if prev_token is not None and next_token is not None:
             next_token = next_token.lower()  # Ensure it is lower case
-            numerator = (self.trigram_dist[prev_token + "_" + possible_token +
-                                           "_" + next_token] + pseudo_count)
+            numerator = (
+                self.trigram_dist[prev_token + "_" + possible_token + "_" + next_token]
+                + pseudo_count
+            )
             denominator = 0
-            for alternativeToken in self.word_casing_lookup[
-                    possible_token.lower()]:
+            for alternativeToken in self.word_casing_lookup[possible_token.lower()]:
                 denominator += (
-                    self.trigram_dist[prev_token + "_" + alternativeToken +
-                                      "_" + next_token] + pseudo_count)
+                    self.trigram_dist[
+                        prev_token + "_" + alternativeToken + "_" + next_token
+                    ]
+                    + pseudo_count
+                )
 
             trigram_score = numerator / denominator
 
-        result = (math.log(unigram_score) + math.log(bigram_backward_score) +
-                  math.log(bigram_forward_score) + math.log(trigram_score))
+        result = (
+            math.log(unigram_score)
+            + math.log(bigram_backward_score)
+            + math.log(bigram_forward_score)
+            + math.log(trigram_score)
+        )
 
         return result
 
@@ -103,9 +113,11 @@ class TrueCaser(object):
         Returns (str): detokenized, truecased version of input sentence 
         """
         tokens = word_tokenize(sentence)
-        tokens_true_case = self.get_true_case_from_tokens(tokens, out_of_vocabulary_token_option)
+        tokens_true_case = self.get_true_case_from_tokens(
+            tokens, out_of_vocabulary_token_option
+        )
         return self.detknzr.detokenize(tokens_true_case)
-        
+
     def get_true_case_from_tokens(self, tokens, out_of_vocabulary_token_option="title"):
         """ Returns the true case for the passed tokens.
     
@@ -124,24 +136,30 @@ class TrueCaser(object):
 
             if token in string.punctuation or token.isdigit():
                 tokens_true_case.append(token)
+            elif self.abbreviations and token in self.abbreviations:
+                tokens_true_case.append(token)
             else:
                 token = token.lower()
                 if token in self.word_casing_lookup:
                     if len(self.word_casing_lookup[token]) == 1:
-                        tokens_true_case.append(
-                            list(self.word_casing_lookup[token])[0])
+                        tokens_true_case.append(list(self.word_casing_lookup[token])[0])
                     else:
-                        prev_token = (tokens_true_case[token_idx - 1]
-                                      if token_idx > 0 else None)
-                        next_token = (tokens[token_idx + 1]
-                                      if token_idx < len(tokens) - 1 else None)
+                        prev_token = (
+                            tokens_true_case[token_idx - 1] if token_idx > 0 else None
+                        )
+                        next_token = (
+                            tokens[token_idx + 1]
+                            if token_idx < len(tokens) - 1
+                            else None
+                        )
 
                         best_token = None
                         highest_score = float("-inf")
 
                         for possible_token in self.word_casing_lookup[token]:
-                            score = self.get_score(prev_token, possible_token,
-                                                   next_token)
+                            score = self.get_score(
+                                prev_token, possible_token, next_token
+                            )
 
                             if score > highest_score:
                                 best_token = possible_token
@@ -150,8 +168,7 @@ class TrueCaser(object):
                         tokens_true_case.append(best_token)
 
                     if token_idx == 0:
-                        tokens_true_case[0] = self.first_token_case(
-                            tokens_true_case[0])
+                        tokens_true_case[0] = self.first_token_case(tokens_true_case[0])
 
                 else:  # Token out of vocabulary
                     if out_of_vocabulary_token_option == "title":
@@ -167,8 +184,9 @@ class TrueCaser(object):
 
 
 if __name__ == "__main__":
-    dist_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                  "data/english.dist")
+    dist_file_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "data/english.dist"
+    )
 
     caser = TrueCaser(dist_file_path)
 

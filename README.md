@@ -36,6 +36,15 @@ Simple usecase:
 'Hey, what is the weather in New York?''
 ```
 
+Abbreviations usecase:
+
+```python
+>>> from truecase import TrueCaser
+>>> tr = TrueCaser(abbreviations=['WHO'])
+>>> tr.get_true_case('for WHO Group Guidelines Integrated Management Sick Child Integrated')
+'For WHO group guidelines integrated management sick child integrated'
+```
+
 ## Training your own model
 
 TODO. For now refer to Trainer.py
