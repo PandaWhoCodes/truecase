@@ -6,7 +6,10 @@ import string
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.tokenize.treebank import TreebankWordDetokenizer
-
+import spacy
+nlp = spacy.load("en_core_web_sm")
+from spacy.tokens import Doc
+from typing import List
 
 class TrueCaser(object):
     def __init__(self, dist_file_path=None, abbreviations=None):
@@ -112,51 +115,56 @@ class TrueCaser(object):
     
         Returns (str): detokenized, truecased version of input sentence 
         """
-        tokens = word_tokenize(sentence)
+        doc = nlp(sentence)
+        
+        # tokens = word_tokenize(sentence)
         tokens_true_case = self.get_true_case_from_tokens(
-            tokens, out_of_vocabulary_token_option
+            doc, out_of_vocabulary_token_option
         )
-        return self.detknzr.detokenize(tokens_true_case)
+        return tokens_true_case.text_with_ws
 
-    def get_true_case_from_tokens(self, tokens, out_of_vocabulary_token_option="title"):
+    from spacy.tokens import Doc
+
+    def get_true_case_from_tokens(self, doc: Doc, out_of_vocabulary_token_option="title") -> Doc:
         """ Returns the true case for the passed tokens.
-    
-        @param tokens: List of tokens in a single sentence
-        @param pretokenised: set to true if input is alreay tokenised (e.g. string with whitespace between tokens)
+
+        @param doc: spacy Doc object containing tokens in a single sentence
         @param outOfVocabularyTokenOption:
             title: Returns out of vocabulary (OOV) tokens in 'title' format
             lower: Returns OOV tokens in lower case
             as-is: Returns OOV tokens as is
-        
-        Returns (list[str]): truecased version of input list
-        of tokens 
-        """
-        tokens_true_case = []
-        for token_idx, token in enumerate(tokens):
 
-            if token in string.punctuation or token.isdigit():
-                tokens_true_case.append(token)
-            elif self.abbreviations and token in self.abbreviations:
-                tokens_true_case.append(token)
+        Returns (Doc): truecased version of input spacy Doc object
+        """
+        tokens_true_case: List[str] = []
+        tokens_whitespace: List[str] = []
+
+        for token_idx, token in enumerate(doc):
+
+            token_text = token.text
+            if token_text in string.punctuation or token_text.isdigit():
+                tokens_true_case.append(token_text)
+            elif self.abbreviations and token_text in self.abbreviations:
+                tokens_true_case.append(token_text)
             else:
-                token = token.lower()
-                if token in self.word_casing_lookup:
-                    if len(self.word_casing_lookup[token]) == 1:
-                        tokens_true_case.append(list(self.word_casing_lookup[token])[0])
+                token_text = token_text.lower()
+                if token_text in self.word_casing_lookup:
+                    if len(self.word_casing_lookup[token_text]) == 1:
+                        tokens_true_case.append(list(self.word_casing_lookup[token_text])[0])
                     else:
                         prev_token = (
                             tokens_true_case[token_idx - 1] if token_idx > 0 else None
                         )
                         next_token = (
-                            tokens[token_idx + 1]
-                            if token_idx < len(tokens) - 1
+                            doc[token_idx + 1].text
+                            if token_idx < len(doc) - 1
                             else None
                         )
 
                         best_token = None
                         highest_score = float("-inf")
 
-                        for possible_token in self.word_casing_lookup[token]:
+                        for possible_token in self.word_casing_lookup[token_text]:
                             score = self.get_score(
                                 prev_token, possible_token, next_token
                             )
@@ -172,15 +180,17 @@ class TrueCaser(object):
 
                 else:  # Token out of vocabulary
                     if out_of_vocabulary_token_option == "title":
-                        tokens_true_case.append(token.title())
+                        tokens_true_case.append(token_text.title())
                     elif out_of_vocabulary_token_option == "capitalize":
-                        tokens_true_case.append(token.capitalize())
+                        tokens_true_case.append(token_text.capitalize())
                     elif out_of_vocabulary_token_option == "lower":
-                        tokens_true_case.append(token.lower())
+                        tokens_true_case.append(token_text.lower())
                     else:
-                        tokens_true_case.append(token)
+                        tokens_true_case.append(token_text)
 
-        return tokens_true_case
+            tokens_whitespace.append(token.whitespace_)  # Store the whitespace after each token
+
+        return Doc(doc.vocab, words=tokens_true_case, spaces=tokens_whitespace)
 
 
 if __name__ == "__main__":
